@@ -1,0 +1,73 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'Dockerfile'
+      - '.github/workflows/deploy-gcp.yml'
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: us-central1
+  IMAGE_NAME: digital-advisory-api
+  SERVICE_NAME: digital-advisory-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: ✅ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: ☁️ Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 🐳 Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker $GCP_REGION-docker.pkg.dev
+
+      - name: 🏗️ Build Docker image
+        run: |
+          docker build \
+            -t $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/digital-advisory-api/$IMAGE_NAME:${{ github.sha }} \
+            -t $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/digital-advisory-api/$IMAGE_NAME:latest \
+            .
+
+      - name: 📤 Push image to Artifact Registry
+        run: |
+          docker push $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/digital-advisory-api/$IMAGE_NAME:${{ github.sha }}
+          docker push $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/digital-advisory-api/$IMAGE_NAME:latest
+
+      - name: 🚀 Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/digital-advisory-api/$IMAGE_NAME:${{ github.sha }} \
+            --platform=managed \
+            --region=$GCP_REGION \
+            --allow-unauthenticated \
+            --memory=1Gi \
+            --cpu=1 \
+            --timeout=120 \
+            --max-instances=10 \
+            --vpc-connector=advisory-connector \
+            --set-env-vars=DATABASE_URL=${{ secrets.DATABASE_URL }},REDIS_URL=${{ secrets.REDIS_URL }},ENVIRONMENT=production,DEBUG=false \
+            --service-account=github-deployer@$GCP_PROJECT_ID.iam.gserviceaccount.com
+
+      - name: ✨ Get service URL
+        run: |
+          URL=$(gcloud run services describe $SERVICE_NAME --platform=managed --region=$GCP_REGION --format='value(status.url)')
+          echo "🎉 Service deployed at: $URL"
+          echo "📊 Service URL: $URL" >> $GITHUB_STEP_SUMMARY
