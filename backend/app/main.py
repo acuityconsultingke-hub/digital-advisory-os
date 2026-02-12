@@ -74,3 +74,39 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs"
     }    
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Get connection string
+db_user = os.getenv("DB_USER", "advisory_app")
+db_password = os.getenv("DB_PASSWORD")
+db_name = os.getenv("DB_NAME", "digital_advisory")
+db_instance = os.getenv("DB_INSTANCE", "digital-advisory-prod:us-central1:advisory-postgres-prod")
+
+# For Cloud Run with Cloud SQL Proxy
+if os.getenv("ENVIRONMENT") == "production":
+    # Unix socket connection (Cloud Run + Cloud SQL)
+    DATABASE_URL = f"postgresql://{db_user}:{db_password}@/{db_name}?host=/cloudsql/{db_instance}"
+else:
+    # Regular TCP connection (local development)
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "5432")
+    DATABASE_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+# Create engine
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+    echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true"
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
