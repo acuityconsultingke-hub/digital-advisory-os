@@ -1,0 +1,12 @@
+# 1. Install dependencies locally (this generates package-lock.json)
+npm install
+
+# 2. Check that the file was created
+ls package-lock.json  # Should show the file exists
+
+# 3. Add it to git
+git add package-lock.json
+
+# 4. Commit and push
+git commit -m "Add package-lock.json for reproducible builds"
+git push
